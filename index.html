@@ -52,6 +52,9 @@ th{background:#f5f5f5;white-space:nowrap} td.logic{max-width:420px} td.num, th.n
 <p class="small">数据口径：中午版成交量、换手率、市值、流通市值为上午收盘盘中值，非全日值；下午版为全日收盘值。取不到的字段显示“缺失”，不做推算。</p>
 
 <script>
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function yi(v){ return v==null?"缺失":(v/1e8).toFixed(2)+"亿元"; }
+function pct(v){ return v==null?"缺失":Number(v).toFixed(2)+"%"; }
 async function fetchData(){
   const r = await fetch("data.json?t=" + Date.now());
   if(!r.ok) throw new Error("data.json 读取失败");
