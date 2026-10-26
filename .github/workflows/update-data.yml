@@ -1,0 +1,22 @@
+name: Sync website data
+on:
+  schedule:
+    - cron: "5 4 * * 1-5"
+    - cron: "35 8 * * 1-5"
+    - cron: "5 10 * * 1-5"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch data from gateway
+        run: python3 dump_data.py
+      - name: Commit data.json if changed
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data.json
+          git diff --cached --quiet || (git commit -m "Sync website data" && git push)
