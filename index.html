@@ -21,7 +21,7 @@ th{background:#f5f5f5;white-space:nowrap} td.logic{max-width:420px} td.num, th.n
 </head>
 <body>
 <h1>日报可视化：回购增持与当日涨停</h1>
-<p class="small">数据直接来自日报数据库：数据库一更新，本页刷新即更新，不需要重新发布。本页不放任何密钥，只读公开的读接口。仅作研究展示，不构成买卖建议。</p>
+<p class="small">数据由仓库定时任务从日报数据库同步到本站 data.json，本页只读同站文件，不放任何密钥。同步约在中午版后 12:05、下午版后 16:35、回购日报后 18:05（北京时间），刷新页面即见最新同步结果。仅作研究展示，不构成买卖建议。</p>
 <p class="status" id="status">正在读取数据……</p>
 <nav><a href="#buyback">近30天回购增持</a><a href="#limitup">当日涨停</a></nav>
 
@@ -52,21 +52,10 @@ th{background:#f5f5f5;white-space:nowrap} td.logic{max-width:420px} td.num, th.n
 <p class="small">数据口径：中午版成交量、换手率、市值、流通市值为上午收盘盘中值，非全日值；下午版为全日收盘值。取不到的字段显示“缺失”，不做推算。</p>
 
 <script>
-const BASE = "https://jioclrmrlknmvszkkhph.supabase.co/functions/v1/yjgj02gmail-feishu-test";
-function shanghaiDate(offsetDays){
-  const d = new Date(Date.now() + 8*3600*1000 + offsetDays*86400*1000);
-  return d.toISOString().slice(0,10);
-}
-function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function yi(v){ return v==null?"缺失":(v/1e8).toFixed(2)+"亿元"; }
-function pct(v){ return v==null?"缺失":Number(v).toFixed(2)+"%"; }
-async function fetchRows(table, select, extra){
-  const q = new URLSearchParams({action:"db_read", table, select, limit:"1000"});
-  (extra||[]).forEach(([k,v])=>q.append(k,v));
-  const r = await fetch(BASE+"?"+q.toString());
-  const j = await r.json();
-  if(!j.ok) throw new Error(j.error||"读取失败");
-  return j.rows||[];
+async function fetchData(){
+  const r = await fetch("data.json?t=" + Date.now());
+  if(!r.ok) throw new Error("data.json 读取失败");
+  return await r.json();
 }
 let bbRows=[], luRows=[], luDate="", luVersion="am";
 function renderBuyback(){
@@ -91,28 +80,29 @@ function renderLimitup(){
   if(s) rows=rows.filter(r=>(r.name||"").includes(s)||(r.code||"").includes(s));
   rows.sort((x,y)=>((y.board_count||0)-(x.board_count||0))||((y.pct||0)-(x.pct||0)));
   document.getElementById("luCount").textContent = luDate ? (luDate+" "+(luVersion==="am"?"中午版":"下午版")+" 共 "+rows.length+" 只") : "";
-  document.getElementById("luNote").textContent = luError ? "涨停表尚未建好：需先在 Supabase 网页版执行建表 SQL，之后报告生成时自动写入。" : rows.length ? (luVersion==="am" ? "中午版：成交量、换手率、市值、流通市值为上午收盘盘中值，非全日值。" : "下午版：全日收盘值。") : (luDate ? "该版本今日尚未生成，请稍后刷新。" : "暂无涨停数据。");
+  document.getElementById("luNote").textContent = rows.length ? (luVersion==="am" ? "中午版：成交量、换手率、市值、流通市值为上午收盘盘中值，非全日值。" : "下午版：全日收盘值。") : (luDate ? "该版本今日尚未生成，请稍后刷新。" : "暂无涨停数据。");
   document.getElementById("luBody").innerHTML = rows.map(r=>"<tr><td>"+esc(r.name)+"（"+esc(r.code)+"）</td><td class='num'>"+pct(r.pct)+"</td><td>"+esc(r.boards||"")+"</td><td class='num'>"+esc(r.zt_time||"")+"</td><td class='num'>"+(r.volume_wan==null?"缺失":Number(r.volume_wan).toFixed(1)+"万手")+"</td><td class='num'>"+pct(r.turnover_pct)+"</td><td class='num'>"+(r.market_cap_yi==null?"缺失":Number(r.market_cap_yi).toFixed(1)+"亿元")+"</td><td class='num'>"+(r.float_cap_yi==null?"缺失":Number(r.float_cap_yi).toFixed(1)+"亿元")+"</td><td>"+esc(r.industry||"")+"</td><td class='logic'>"+esc(r.logic||"")+"</td><td>"+esc(r.grade||"")+"</td><td class='num'>"+(r.strength==null?"":r.strength)+"</td><td>"+esc(r.disclosure_date||"")+"</td></tr>").join("") || "<tr><td colspan='13'>暂无数据</td></tr>";
 }
 ["bbMarket","bbAdmitted","bbSearch","bbSort"].forEach(id=>document.getElementById(id).addEventListener("input",renderBuyback));
 ["luIndustry","luBoard","luSearch"].forEach(id=>document.getElementById(id).addEventListener("input",renderLimitup));
 document.getElementById("tabAm").onclick=()=>{luVersion="am";document.getElementById("tabAm").classList.add("active");document.getElementById("tabPm").classList.remove("active");renderLimitup();};
 document.getElementById("tabPm").onclick=()=>{luVersion="pm";document.getElementById("tabPm").classList.add("active");document.getElementById("tabAm").classList.remove("active");renderLimitup();};
-let luError = false;
 (async ()=>{
   try{
-    bbRows = await fetchRows("yjgj02gmail_buyback_track","report_date,market,code,name,event_label,event_type,amount_yuan,market_cap_yuan,buyback_ratio,method,purpose,stage,score,admitted,guru_tag",[["report_date","gte."+shanghaiDate(-30)]]);
-  }catch(e){ bbRows = []; }
-  try{
-    const lu = await fetchRows("yjgj02gmail_limitup_daily","report_date,version,code,name,pct,boards,board_count,zt_time,volume_wan,turnover_pct,market_cap_yi,float_cap_yi,industry,logic,grade,strength,disclosure_date",[["report_date","gte."+shanghaiDate(-7)]]);
+    const data = await fetchData();
+    bbRows = data.buyback || [];
+    const lu = data.limitup || [];
     const dates = [...new Set(lu.map(r=>r.report_date))].sort();
     luDate = dates.length ? dates[dates.length-1] : "";
     luRows = lu.filter(r=>r.report_date===luDate);
-  }catch(e){ luError = true; luRows = []; }
-  const inds = [...new Set(luRows.map(r=>r.industry).filter(Boolean))].sort();
-  document.getElementById("luIndustry").innerHTML = "<option value=''>全部行业</option>"+inds.map(i=>"<option>"+esc(i)+"</option>").join("");
-  document.getElementById("status").textContent = "数据已读取：回购 "+bbRows.length+" 条（近30天）；涨停最新日期 "+(luDate||(luError?"涨停表尚未建好，待执行建表 SQL 后自动出现":"暂无"))+"。刷新页面即更新。";
-  renderBuyback(); renderLimitup();
+    const inds = [...new Set(luRows.map(r=>r.industry).filter(Boolean))].sort();
+    document.getElementById("luIndustry").innerHTML = "<option value=''>全部行业</option>"+inds.map(i=>"<option>"+esc(i)+"</option>").join("");
+    document.getElementById("status").textContent = "数据已读取（同步于 "+(data.generated_at_beijing||"未知")+"）：回购 "+bbRows.length+" 条（近30天）；涨停最新日期 "+(luDate||"暂无")+"。刷新页面即更新。";
+    renderBuyback(); renderLimitup();
+  }catch(e){
+    document.getElementById("status").textContent = "数据文件暂时读不到，请稍后刷新页面重试。";
+    renderBuyback(); renderLimitup();
+  }
 })();
 </script>
 </body>
