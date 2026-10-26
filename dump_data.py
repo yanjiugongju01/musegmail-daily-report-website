@@ -18,6 +18,16 @@ def main():
     lu = fetch("yjgj02gmail_limitup_daily",
                "report_date,version,code,name,pct,boards,board_count,zt_time,volume_wan,turnover_pct,market_cap_yi,float_cap_yi,industry,logic,grade,strength,disclosure_date",
                (today - timedelta(days=7)).isoformat())
+    # Source tables can contain exact duplicate rows (gateway is insert-only);
+    # dedupe on display so the site does not show the same row twice.
+    def dedupe(rows):
+        seen, out = set(), []
+        for r in rows:
+            k = json.dumps(r, sort_keys=True, ensure_ascii=False)
+            if k not in seen:
+                seen.add(k); out.append(r)
+        return out
+    bb, lu = dedupe(bb), dedupe(lu)
     out = {"generated_at_beijing": datetime.now(BJ).strftime("%Y-%m-%d %H:%M"),
            "buyback": bb, "limitup": lu}
     with open("data.json", "w", encoding="utf-8") as f:
